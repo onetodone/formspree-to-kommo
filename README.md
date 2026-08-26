@@ -265,7 +265,3 @@ db/payload/
 
 - Confirm `WEBHOOK_SECRET` matches what Formspree signs with, and that the signature header name matches (`X-Formspree-Signature` or `X-Hub-Signature-256`)
 - Signature validation only runs when `NODE_ENV=production`
-
-## License
-
-ISC
