@@ -79,7 +79,7 @@ class SentRegistry {
       this.cache.lastUpdated = new Date().toISOString()
       await fs.writeFile(this.dbPath, JSON.stringify(this.cache, null, 2))
     } catch (error) {
-      throw new Error(`Failed to save sent registry: ${error.message}`)
+      throw new Error(`Failed to save sent registry: ${error.message}`, { cause: error })
     }
   }
 
