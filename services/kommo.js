@@ -83,10 +83,16 @@ class KommoService {
         this.refreshToken = tokenData.refresh_token
       }
 
-      this.logger?.logKommoResponse(tokenData, true, 'token refresh')
+      this.logger?.logKommoResponse(
+        { token_type: tokenData.token_type, expires_in: tokenData.expires_in },
+        true,
+        'token refresh',
+      )
 
       // Note: In production, you'd want to save the new tokens securely
-      this.logger?.fastifyLogger?.warn('New access token received. Update your .env file with the new token.')
+      this.logger?.fastifyLogger?.warn(
+        'Kommo access token refreshed in memory. Persist the new token pair to survive a restart.',
+      )
 
       return tokenData
     } catch (error) {

@@ -155,7 +155,7 @@ Returns Kommo configuration status and the number of registry entries:
 
 1. **Webhook Reception**: Formspree sends a webhook to `/webhooks/formspree`
 2. **Logging**: Request and payload are logged to `logs/` and `db/payload/`
-3. **Validation**: In production, signature/timestamp/IP/payload checks run (see Security below)
+3. **Validation**: signature/timestamp/payload checks run on every request; IP checks run in production (see Security below)
 4. **Duplicate Check**: Registry (`db/sent.json`) is checked using email + form + source + submission date
 5. **Transformation**: Formspree submission is transformed into a Kommo incoming lead
 6. **API Call**: Lead is created in Kommo; the full submission is attached to it as a note
@@ -175,8 +175,8 @@ Returns Kommo configuration status and the number of registry entries:
 | `KOMMO_ACCESS_TOKEN`          | Current access token                           | Yes      |
 | `KOMMO_REFRESH_TOKEN`         | Refresh token for automatic renewal            | Yes      |
 | `KOMMO_DEFAULT_PIPELINE_ID`   | Pipeline used for created leads                | Yes      |
-| `WEBHOOK_SECRET`              | HMAC secret for signature validation           | No       |
-| `STRICT_SIGNATURE_VALIDATION` | Reject requests with missing/invalid signature | No       |
+| `WEBHOOK_SECRET`              | HMAC secret for signature validation           | Yes      |
+| `WEBHOOK_ALLOW_UNSIGNED`      | Accept unsigned webhooks (local dev only)      | No       |
 | `STRICT_IP_VALIDATION`        | Reject requests from unrecognized source IPs   | No       |
 | `CORS_ORIGINS`                | Allowed CORS origins (comma-separated)         | No       |
 | `RATE_LIMIT_MAX`              | Max requests per window (production only)      | No       |
@@ -185,12 +185,14 @@ Returns Kommo configuration status and the number of registry entries:
 
 ## Security
 
-Webhook validation (`utils/webhook-validator.js`) runs whenever `NODE_ENV=production`:
+Webhook validation (`utils/webhook-validator.js`) runs on **every** request, in every environment:
 
-- **Signature validation**: if `WEBHOOK_SECRET` is set and `STRICT_SIGNATURE_VALIDATION=true`, requests must carry a valid `X-Formspree-Signature` / `X-Hub-Signature-256` HMAC-SHA256 header, verified against the raw request body. Without strict mode, mismatches are only logged.
+- **Signature validation**: `WEBHOOK_SECRET` is required — the server refuses to start without it (unless `WEBHOOK_ALLOW_UNSIGNED=true`, intended for local development only). Every request must carry a valid `X-Formspree-Signature` / `X-Hub-Signature-256` HMAC-SHA256 header, verified against the raw request body. A missing or invalid signature is rejected with `400`.
 - **Timestamp validation**: if an `X-Formspree-Timestamp` header is present, it must be within 5 minutes of the current time (replay protection).
-- **Source IP validation**: if `STRICT_IP_VALIDATION=true`, requests must originate from Formspree/AWS IP ranges; otherwise the source IP is only logged.
+- **Source IP validation**: if `STRICT_IP_VALIDATION=true` and `NODE_ENV=production`, requests must originate from the configured IP ranges; otherwise the source IP is only logged.
 - **Payload validation**: submission must be an object containing a usable email field, must not trip the Formspree honeypot (`_gotcha`), and must be under 50 KB.
+
+Credentials are kept out of the logs: OAuth token payloads are never logged, and `authorization` / `cookie` / signature headers are redacted from log lines and dropped from the on-disk request log.
 
 Rate limiting, Helmet, and CORS (restricted to Formspree/submit-form origins) are enabled automatically when `NODE_ENV=production`.
 
@@ -235,8 +237,8 @@ db/payload/
 
 - [ ] Never commit `.env` to version control
 - [ ] Serve over HTTPS only
-- [ ] Set `NODE_ENV=production` to enable rate limiting, Helmet, CORS restrictions, and webhook validation
-- [ ] Set `WEBHOOK_SECRET` and enable `STRICT_SIGNATURE_VALIDATION` if Formspree signs your webhooks
+- [ ] Set `NODE_ENV=production` to enable rate limiting, Helmet, and CORS restrictions
+- [ ] Set `WEBHOOK_SECRET` (required) and leave `WEBHOOK_ALLOW_UNSIGNED` unset
 - [ ] Rotate Kommo OAuth tokens periodically
 
 ### Monitoring
@@ -264,4 +266,5 @@ db/payload/
 **Webhook validation rejecting valid requests**
 
 - Confirm `WEBHOOK_SECRET` matches what Formspree signs with, and that the signature header name matches (`X-Formspree-Signature` or `X-Hub-Signature-256`)
-- Signature validation only runs when `NODE_ENV=production`
+- Signature validation runs in every environment. For local testing without signing, set `WEBHOOK_ALLOW_UNSIGNED=true`
+- If the server exits on start with a `WEBHOOK_SECRET is not set` message, set the secret (or `WEBHOOK_ALLOW_UNSIGNED=true` for local dev)
