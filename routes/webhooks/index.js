@@ -83,24 +83,22 @@ module.exports = async function (fastify) {
         // Log the full request
         await logger.logRequest(request, payload)
 
-        // Validate webhook if in production
-        if (process.env.NODE_ENV === 'production') {
-          const validation = webhookValidator.validateWebhook(request, payload)
-          if (!validation.isValid) {
-            fastify.log.warn(
-              {
-                ip: request.ip,
-                errors: validation.errors,
-              },
-              'Webhook validation failed',
-            )
+        // Validate every webhook, in every environment
+        const validation = webhookValidator.validateWebhook(request, payload)
+        if (!validation.isValid) {
+          fastify.log.warn(
+            {
+              ip: request.ip,
+              errors: validation.errors,
+            },
+            'Webhook validation failed',
+          )
 
-            return reply.status(400).send({
-              success: false,
-              message: 'Webhook validation failed',
-              error: validation.errors.join(', '),
-            })
-          }
+          return reply.status(400).send({
+            success: false,
+            message: 'Webhook validation failed',
+            error: validation.errors.join(', '),
+          })
         }
 
         // Extract email from submission for tracking
@@ -182,7 +180,6 @@ module.exports = async function (fastify) {
               email,
               formUniqueId,
               leadId,
-              kommoResponse: kommoResponse,
             },
             'Successfully processed Formspree submission as incoming lead',
           )

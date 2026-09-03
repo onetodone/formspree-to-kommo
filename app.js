@@ -11,6 +11,25 @@ dotenv.config()
 const fastify = Fastify({
   logger: {
     level: config.logging.level,
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers["x-formspree-signature"]',
+        'req.headers["x-hub-signature-256"]',
+        'headers.authorization',
+        'headers.cookie',
+        'headers["x-formspree-signature"]',
+        'headers["x-hub-signature-256"]',
+        'access_token',
+        'refresh_token',
+        '*.access_token',
+        '*.refresh_token',
+        'response.access_token',
+        'response.refresh_token',
+      ],
+      censor: '[redacted]',
+    },
   },
 })
 
@@ -108,6 +127,14 @@ fastify.register(AutoLoad, {
   dir: path.join(__dirname, 'routes'),
   options: {},
 })
+
+// Fail closed: a webhook secret is required unless unsigned webhooks are explicitly allowed
+if (!process.env.WEBHOOK_SECRET && process.env.WEBHOOK_ALLOW_UNSIGNED !== 'true') {
+  fastify.log.fatal(
+    'WEBHOOK_SECRET is not set. Configure it, or set WEBHOOK_ALLOW_UNSIGNED=true to accept unsigned webhooks (insecure).',
+  )
+  process.exit(1)
+}
 
 // Start the server
 const start = async () => {

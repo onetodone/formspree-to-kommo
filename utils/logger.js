@@ -1,6 +1,30 @@
 const fs = require('fs/promises')
 const path = require('path')
 
+// Headers worth keeping for debugging. Anything else - notably `authorization`,
+// `cookie`, and the HMAC signature headers - is dropped before a request is
+// written to disk or handed to the logger.
+const SAFE_HEADERS = [
+  'host',
+  'user-agent',
+  'content-type',
+  'content-length',
+  'accept',
+  'x-forwarded-for',
+  'x-forwarded-proto',
+  'x-formspree-timestamp',
+]
+
+function pickSafeHeaders(headers = {}) {
+  const safe = {}
+  for (const name of SAFE_HEADERS) {
+    if (headers[name] !== undefined) {
+      safe[name] = headers[name]
+    }
+  }
+  return safe
+}
+
 /**
  * Logger utility for structured logging
  */
@@ -23,7 +47,7 @@ class Logger {
       timestamp: timestamp.toISOString(),
       method: request.method,
       url: request.url,
-      headers: request.headers,
+      headers: pickSafeHeaders(request.headers),
       body: payload,
       ip: request.ip,
       userAgent: request.headers['user-agent'],

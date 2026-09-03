@@ -16,8 +16,7 @@ class WebhookValidator {
    */
   validateSignature(payload, signature) {
     if (!this.secret) {
-      // If no secret is configured, skip validation (development mode)
-      return true
+      return false
     }
 
     if (!signature) {
@@ -26,17 +25,17 @@ class WebhookValidator {
 
     try {
       // Remove 'sha256=' prefix if present
-      const sig = signature.replace('sha256=', '')
+      const sig = Buffer.from(signature.replace('sha256=', ''), 'hex')
 
       // Create HMAC hash
       const hmac = crypto.createHmac('sha256', this.secret)
       hmac.update(payload, 'utf8')
-      const calculated = hmac.digest('hex')
+      const calculated = hmac.digest()
 
-      // Compare signatures using constant-time comparison
-      return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(calculated, 'hex'))
-    } catch (error) {
-      console.error(error)
+      // Constant-time compare; bail early if the caller's signature is the wrong length
+      return sig.length === calculated.length && crypto.timingSafeEqual(sig, calculated)
+    } catch {
+      // Malformed signature header (e.g. non-hex) - treat as invalid, no stack trace in logs
       return false
     }
   }
@@ -173,22 +172,17 @@ class WebhookValidator {
   validateWebhook(request, payload) {
     const errors = []
 
-    // Validate signature if secret is configured and signature is present
-    if (this.secret && process.env.STRICT_SIGNATURE_VALIDATION === 'true') {
-      const signature = request.headers['x-formspree-signature'] || request.headers['x-hub-signature-256']
-      if (signature && !this.validateSignature(request.rawBody, signature)) {
-        errors.push('Invalid webhook signature')
-      } else if (!signature) {
-        errors.push('No webhook signature provided, but strict validation is enabled')
-      }
-    } else if (this.secret) {
-      // Log but don't fail if signature validation is not strict
+    // A signature is mandatory whenever a secret is configured. With no secret,
+    // the request is rejected unless unsigned webhooks were explicitly allowed.
+    if (this.secret) {
       const signature = request.headers['x-formspree-signature'] || request.headers['x-hub-signature-256']
       if (!signature) {
-        console.log('No webhook signature provided (non-strict mode)')
+        errors.push('Missing webhook signature')
       } else if (!this.validateSignature(request.rawBody, signature)) {
-        console.warn('Webhook signature validation failed (non-strict mode)')
+        errors.push('Invalid webhook signature')
       }
+    } else if (process.env.WEBHOOK_ALLOW_UNSIGNED !== 'true') {
+      errors.push('Webhook secret is not configured')
     }
 
     // Validate timestamp if present (Formspree may not send this)
@@ -205,14 +199,14 @@ class WebhookValidator {
 
     // Validate source IP in production
     if (process.env.NODE_ENV === 'production' && process.env.STRICT_IP_VALIDATION === 'true') {
-      const clientIP = request.ip || request.connection.remoteAddress
+      const clientIP = request.ip || request.socket?.remoteAddress
       if (!this.validateSourceIP(clientIP)) {
         console.warn(`Webhook from unrecognized IP: ${clientIP}`)
         errors.push(`Unauthorized source IP: ${clientIP}`)
       }
     } else if (process.env.NODE_ENV === 'production') {
       // Just log the IP for monitoring purposes
-      const clientIP = request.ip || request.connection.remoteAddress
+      const clientIP = request.ip || request.socket?.remoteAddress
       const forwardedFor = request.headers['x-forwarded-for']
       console.log(`Webhook received from IP: ${clientIP} (Forwarded: ${forwardedFor})`)
     }
